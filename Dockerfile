@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine as build_env
+FROM golang:1.22-alpine AS build_env
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -13,13 +13,12 @@ RUN apk update && apk add --no-cache \
 # Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
 RUN go mod download
 
-FROM build_env as builder
+FROM build_env AS builder
 # Copy the source from the current directory to the Working Directory inside the container
 COPY layer.go ./
 COPY cmd ./cmd
 
 # Build the app binaries
-RUN go vet ./...
 RUN CGO_ENABLED=0 GOOS=linux go build -a -o /s3-datalayer ./cmd/main.go
 
 FROM scratch
