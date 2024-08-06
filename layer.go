@@ -44,10 +44,10 @@ func EnrichConfig(config *cdl.Config) error {
 	return nil
 }
 
-func MakeS3Client(endpoint string, accessKey string, secretKey string) (*minio.Client, error) {
+func MakeS3Client(endpoint string, accessKey string, secretKey string, secure bool) (*minio.Client, error) {
 	s3Client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: true,
+		Secure: secure,
 	})
 	if err != nil {
 		return nil, err
@@ -56,6 +56,7 @@ func MakeS3Client(endpoint string, accessKey string, secretKey string) (*minio.C
 }
 
 type S3DataLayerConfig struct {
+	Secure    bool   `json:"secure"`
 	Endpoint  string `json:"endpoint"`
 	AccessKey string `json:"access_key"` // AWS_ACCESS_KEY_ID
 	SecretKey string `json:"secret"`     // AWS_SECRET_ACCESS_KEY
@@ -220,7 +221,7 @@ func checkBucketExists(client *minio.Client, bucket string) (bool, error) {
 
 func (s3dataset *S3Dataset) AssertBucket(bucket string) error {
 	// make client
-	client, err := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey)
+	client, err := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey, s3dataset.layerConfig.Secure)
 	if err != nil {
 		return err
 	}
@@ -265,13 +266,13 @@ func (s3dataset *S3Dataset) FullSync(ctx context.Context, batchInfo cdl.BatchInf
 
 	// create tmp file for full sync
 	tmpFullSyncPath := "fullsyncpart-" + batchInfo.SyncId + "-" + uuid.New().String()
-	client, cerr := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey)
+	client, cerr := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey, s3dataset.layerConfig.Secure)
 	if cerr != nil {
 		s3dataset.logger.Error("could not create s3 client because %s", cerr.Error())
 		return nil, cdl.Err(fmt.Errorf("could not create s3 client because %s", cerr.Error()), cdl.LayerErrorInternal)
 	}
 
-	datasetWriter := &S3DatasetWriter{encoding: s3dataset.config.Encoding, writer: writer, syncId: batchInfo.SyncId, s3client: client, logger: s3dataset.logger, enc: enc, mapper: mapper, factory: factory, bucket: s3dataset.config.Bucket, fullSyncFileName: s3dataset.config.WriteFullSyncFileName, closeFullSync: batchInfo.IsLastBatch}
+	datasetWriter := &S3DatasetWriter{sourceConfig: s3dataset.datasetDefinition.SourceConfig, encoding: s3dataset.config.Encoding, writer: writer, syncId: batchInfo.SyncId, s3client: client, logger: s3dataset.logger, enc: enc, mapper: mapper, factory: factory, bucket: s3dataset.config.Bucket, fullSyncFileName: s3dataset.config.WriteFullSyncFileName, closeFullSync: batchInfo.IsLastBatch}
 	datasetWriter.wg.Add(1)
 
 	go func() {
@@ -306,13 +307,13 @@ func (s3dataset *S3Dataset) Incremental(ctx context.Context) (cdl.DatasetWriter,
 	mapper := cdl.NewMapper(s3dataset.logger, s3dataset.datasetDefinition.IncomingMappingConfig, s3dataset.datasetDefinition.OutgoingMappingConfig)
 
 	// create tmp file for full sync
-	client, cerr := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey)
+	client, cerr := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey, s3dataset.layerConfig.Secure)
 	if cerr != nil {
 		s3dataset.logger.Error("could not create s3 client because %s", cerr.Error())
 		return nil, cdl.Err(fmt.Errorf("could not create s3 client because %s", cerr.Error()), cdl.LayerErrorInternal)
 	}
 
-	datasetWriter := &S3DatasetWriter{encoding: s3dataset.config.Encoding, writer: writer, s3client: client, logger: s3dataset.logger, enc: enc, mapper: mapper, factory: factory, bucket: s3dataset.config.Bucket}
+	datasetWriter := &S3DatasetWriter{sourceConfig: s3dataset.datasetDefinition.SourceConfig, encoding: s3dataset.config.Encoding, writer: writer, s3client: client, logger: s3dataset.logger, enc: enc, mapper: mapper, factory: factory, bucket: s3dataset.config.Bucket}
 	datasetWriter.wg.Add(1)
 
 	go func() {
@@ -328,6 +329,7 @@ func (s3dataset *S3Dataset) Incremental(ctx context.Context) (cdl.DatasetWriter,
 }
 
 type S3DatasetWriter struct {
+	sourceConfig     map[string]any
 	logger           cdl.Logger
 	enc              encoder.ItemWriter
 	factory          encoder.ItemFactory
@@ -346,6 +348,8 @@ func getContentTypeFromEncoding(encoding string) string {
 	switch encoding {
 	case "json":
 		return "application/json"
+	case "ndjson":
+		return "application/x-ndjson"
 	case "csv":
 		return "text/csv"
 	case "parquet":
@@ -396,14 +400,23 @@ func (s3writer *S3DatasetWriter) Close() cdl.LayerError {
 			return objects[i].LastModified.Before(objects[j].LastModified)
 		})
 
-		err = combineFilesIntoNewObject(context.Background(), s3writer.logger, s3writer.s3client, s3writer.bucket, objects, s3writer.fullSyncFileName, getContentTypeFromEncoding(s3writer.encoding))
+		err = s3writer.combineFilesIntoNewObject(context.Background(), s3writer.logger, s3writer.s3client, s3writer.bucket, objects, s3writer.fullSyncFileName, getContentTypeFromEncoding(s3writer.encoding))
+		if err != nil {
+			return cdl.Err(fmt.Errorf("could not combine files into new object because %s", err.Error()), cdl.LayerErrorInternal)
+		}
 	}
 
 	return nil
 }
 
-func combineFilesIntoNewObject(ctx context.Context, logger cdl.Logger, client *minio.Client, bucketName string, objects []ObjectInfo, newObjectName string, contentType string) error {
+func (s3writer *S3DatasetWriter) combineFilesIntoNewObject(ctx context.Context, logger cdl.Logger, client *minio.Client, bucketName string, objects []ObjectInfo, newObjectName string, contentType string) error {
 	reader, writer := io.Pipe()
+
+	// Create a new encoder
+	concatWriter, err := encoder.NewConcatenatingWriter(s3writer.sourceConfig, writer)
+	if err != nil {
+		return err
+	}
 
 	// Goroutine to handle writing to the pipe
 	go func() {
@@ -418,15 +431,20 @@ func combineFilesIntoNewObject(ctx context.Context, logger cdl.Logger, client *m
 			defer object.Close()
 
 			// Write the object data to the pipe
-			if _, err := io.Copy(writer, object); err != nil {
-				logger.Error("Error copying object %s to pipe: %v", obj, err)
-				return
+			err = concatWriter.Write(object)
+			if err != nil {
+				logger.Error("Error writing object %s to pipe: %v", obj, err)
 			}
+		}
+
+		err = concatWriter.Close()
+		if err != nil {
+			logger.Error("Error closing concatenating writer: %v", err)
 		}
 	}()
 
 	// Use the reader part of the pipe to put a new object
-	_, err := client.PutObject(ctx, bucketName, newObjectName, reader, -1, minio.PutObjectOptions{ContentType: contentType})
+	_, err = client.PutObject(ctx, bucketName, newObjectName, reader, -1, minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
 		logger.Error("Error putting object %s in bucket %s: %v", newObjectName, bucketName, err)
 		return err
@@ -490,7 +508,7 @@ func (s3dataset *S3Dataset) Changes(since string, limit int, latestOnly bool) (c
 	}
 
 	// make client
-	client, err := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey)
+	client, err := MakeS3Client(s3dataset.layerConfig.Endpoint, s3dataset.layerConfig.AccessKey, s3dataset.layerConfig.SecretKey, s3dataset.layerConfig.Secure)
 	if err != nil {
 		return nil, cdl.Err(fmt.Errorf("could not create s3 client because %s", err.Error()), cdl.LayerErrorInternal)
 	}

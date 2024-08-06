@@ -9,10 +9,48 @@ import (
 	"github.com/mimiro-io/entity-graph-data-model"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"log"
 	"os"
 	"testing"
 	"time"
 )
+
+var minioC testcontainers.Container
+
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	// Setup MinIO container
+	req := testcontainers.ContainerRequest{
+		Image:        "minio/minio",
+		ExposedPorts: []string{"9000/tcp"},
+		Env: map[string]string{
+			"MINIO_ACCESS_KEY": "minioadmin",
+			"MINIO_SECRET_KEY": "minioadmin",
+		},
+		Cmd:        []string{"server", "/data"},
+		WaitingFor: wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(120 * time.Second),
+	}
+
+	var err error
+	minioC, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		log.Fatalf("could not start container: %s", err)
+	}
+	defer func() {
+		minioC.Terminate(ctx)
+	}()
+
+	// Run tests
+	code := m.Run()
+
+	os.Exit(code)
+}
 
 func TestStartStopFileSystemDataLayer(t *testing.T) {
 	configLocation := "./config"
@@ -108,10 +146,14 @@ func TestGetChanges(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -214,10 +256,14 @@ func TestMultiSourceFilesGetChanges(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -328,10 +374,14 @@ func TestMultiSourceFilesInFolderGetChanges(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -433,10 +483,14 @@ func TestGetChangesWithSinceFilter(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -595,10 +649,14 @@ func TestGetEntities(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -633,9 +691,27 @@ func TestGetEntities(t *testing.T) {
 }
 
 func MakeS3TestClient() (*minio.Client, error) {
+
+	ctx := context.Background()
+	endpoint, err := minioC.Endpoint(ctx, "")
+	if err != nil {
+		log.Fatalf("could not get container endpoint: %s", err)
+	}
+
+	// Initialize MinIO client
+	minioClient, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+		Secure: false,
+	})
+	if err != nil {
+		log.Fatalf("could not create minio client: %s", err)
+	}
+
+	return minioClient, nil
+
 	// env get access key
 	// env get access key
-	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
+	/* accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
 
 	// env get secret key
 	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
@@ -649,7 +725,7 @@ func MakeS3TestClient() (*minio.Client, error) {
 		return nil, err
 	}
 
-	return s3Client, nil
+	return s3Client, nil */
 }
 
 func TestConnect(t *testing.T) {
@@ -719,10 +795,14 @@ func TestWriteFullSync(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -763,6 +843,15 @@ func TestWriteFullSync(t *testing.T) {
 	err = writer.Close()
 	if err != nil {
 		t.Error(err)
+	}
+
+	objectsCh := client.ListObjects(context.Background(), bucket, minio.ListObjectsOptions{})
+	for object := range objectsCh {
+		if object.Key == "people.csv" {
+			if object.Size == 0 {
+				t.Error("Expected file to have content")
+			}
+		}
 	}
 
 	// try reading them back with changes
@@ -830,10 +919,14 @@ func TestWriteIncrementalSyncAppend(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
@@ -981,10 +1074,14 @@ func TestWriteIncrementalSyncNewFilePerBatch(t *testing.T) {
 	serviceRunner := cdl.NewServiceRunner(NewS3DataLayer)
 	serviceRunner.WithConfigLocation(configLocation)
 	serviceRunner.WithEnrichConfig(func(config *cdl.Config) error {
-		err1 := EnrichConfig(config)
-		if err1 != nil {
-			return err1
+		config.NativeSystemConfig["secure"] = false
+		config.NativeSystemConfig["access_key"] = "minioadmin"
+		config.NativeSystemConfig["secret"] = "minioadmin"
+		endpoint, err := minioC.Endpoint(context.Background(), "")
+		if err != nil {
+			return err
 		}
+		config.NativeSystemConfig["endpoint"] = endpoint
 
 		// get dataset definition with name people
 		for _, ds := range config.DatasetDefinitions {
