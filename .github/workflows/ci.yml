@@ -25,20 +25,6 @@ jobs:
       - name: Test with Docker
         run: go test -v ./...
 
-      - name: Test
-        run: go test -cover -coverprofile=coverage.txt ./...
-
-      - name: Archive code coverage results
-        uses: actions/upload-artifact@v4
-        with:
-          name: code-coverage
-          path: coverage.txt
-
-      - name: Code coverage report
-        uses: fgrosse/go-coverage-report@v1.0.2
-        with:
-          coverage-artifact-name: "code-coverage"
-          coverage-file-name: "coverage.txt"
   DockerHub:
       uses: mimiro-io/.github/.github/workflows/dockerhub.yaml@main
       with:
