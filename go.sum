@@ -108,8 +108,8 @@ github.com/mattn/go-isatty v0.0.19/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-runewidth v0.0.10/go.mod h1:RAqKPSqVFrSLVXbA8x7dzmKdmGzieGRCM46jaSJTDAk=
-github.com/mimiro-io/common-datalayer v0.2.5 h1:vNKCJO/G6DLuqdVDfMIPWRhaTonnWLjWtSDSLBt/uoo=
-github.com/mimiro-io/common-datalayer v0.2.5/go.mod h1:34HiR4QTQ1NURn6YUxlCMFHTlfJKM/nRPjXnJ3AOLJQ=
+github.com/mimiro-io/common-datalayer v0.2.6 h1:uRqIGE9VBde5o72HmUa/BaIC2Aw+eI5fVJ8GzoWu7qg=
+github.com/mimiro-io/common-datalayer v0.2.6/go.mod h1:34HiR4QTQ1NURn6YUxlCMFHTlfJKM/nRPjXnJ3AOLJQ=
 github.com/mimiro-io/entity-graph-data-model v0.7.7 h1:3D7DrhHakYadUjyj44YjdVy9EefEINOwWyWHgAN1XJI=
 github.com/mimiro-io/entity-graph-data-model v0.7.7/go.mod h1:A76+PPQYwU1UkAl6OPcxh63gCnCIHXd47JLbTQxLNRA=
 github.com/minio/md5-simd v1.1.2 h1:Gdi1DZK69+ZVMoNHRXJyNcxrMA4dSxoYHZSQbirFg34=

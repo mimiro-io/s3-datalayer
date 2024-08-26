@@ -4,7 +4,7 @@ go 1.22.5
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/mimiro-io/common-datalayer v0.2.5
+	github.com/mimiro-io/common-datalayer v0.2.6
 	github.com/mimiro-io/entity-graph-data-model v0.7.7
 	github.com/minio/minio-go/v7 v7.0.70
 	github.com/testcontainers/testcontainers-go v0.32.0
