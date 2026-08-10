@@ -664,7 +664,7 @@ func (oci *ObjectCollectionEntityIterator) NewItemReadCloser(objectKey string, s
 	objectStream, err := oci.s3client.GetObject(context.Background(), oci.bucket, objectKey, minio.GetObjectOptions{})
 
 	// get encoder for the file
-	itemReader, err := encoder.NewItemIterator(sourceConfig, nil, objectStream)
+	itemReader, err := encoder.NewItemIterator(sourceConfig, oci.logger, objectStream)
 	if err != nil {
 		return nil, cdl.Err(fmt.Errorf("could not create encoder specified in dataset source config"), cdl.LayerErrorBadParameter)
 	}
