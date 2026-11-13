@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 
 WORKDIR /app
 
@@ -16,6 +16,7 @@ COPY cmd ./cmd
 RUN CGO_ENABLED=0 GOOS=linux go build -a -o /s3-datalayer ./cmd/main.go
 
 FROM gcr.io/distroless/static-debian12:nonroot
+USER nonroot
 # Copy the Pre-built binary file from the previous stage
 COPY --from=build /s3-datalayer /
 
