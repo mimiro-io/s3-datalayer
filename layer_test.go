@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 
 	// Setup MinIO container
 	req := testcontainers.ContainerRequest{
-		Image:        "minio/minio",
+		Image:        "cgr.dev/chainguard/minio:latest", // minio/minio is no longer on Docker Hub
 		ExposedPorts: []string{"9000/tcp"},
 		Env: map[string]string{
 			"MINIO_ACCESS_KEY": "minioadmin",
